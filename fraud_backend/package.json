@@ -1,0 +1,22 @@
+{
+  "name": "fraud-detection-backend",
+  "version": "1.0.0",
+  "description": "Fraud Detection API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.1",
+    "joi": "^17.11.0",
+    "mongoose": "^7.6.3",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
