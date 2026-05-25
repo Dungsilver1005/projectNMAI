@@ -118,88 +118,38 @@ Script Python đảm nhận toàn bộ phần inference của mô hình AI:
 - Gọi `model.predict()` và `model.predict_proba()`.
 - Trả kết quả JSON về Node.js.
 
-## 3. Các Artifact Của Mô Hình
+## 3. Các Artifact Của Mô Hình (`.joblib` files)
 
-Các file nằm trong `fraud_backend/model_artifacts/`.
+Thư mục `fraud_backend/model_artifacts/` chứa các file `.joblib`. Đây là các tham số, bộ quy chuẩn và mô hình AI đã được huấn luyện sẵn (pre-trained). Khi hệ thống dự đoán một giao dịch mới, nó sẽ load các file này lên để tái tạo lại chính xác quy trình biến đổi dữ liệu giống như lúc huấn luyện.
 
-### `xgb_fraud_model_combined.joblib`
+Công dụng chi tiết của từng file:
 
-Đây là mô hình XGBoost đã huấn luyện xong. Model nhận input đã được ghép từ:
+### 1. `xgb_fraud_model_combined.joblib`
+- **Loại file:** Mô hình học máy (Machine Learning Model).
+- **Thuật toán:** XGBoost (Extreme Gradient Boosting).
+- **Công dụng:** Đây là "bộ não" chính của dự án. Sau khi học từ hàng triệu dữ liệu giao dịch trong quá khứ, mô hình này phân tích đầu vào và tính toán ra một xác suất (probability) giao dịch đó có phải là gian lận hay không.
+- **Đầu vào:** Một vector số duy nhất, là kết quả ghép lại từ (1) Text Features (văn bản) và (2) Tabular Features (số/thời gian) đã được chuẩn hóa.
+- **Đầu ra:** Dự đoán nhãn `0` (An toàn) hoặc `1` (Gian lận) cùng với xác suất cụ thể (ví dụ 95% gian lận).
 
-```text
-[TF-IDF text features] + [tabular features]
-```
+### 2. `tfidf_vectorizer.joblib`
+- **Loại file:** Trình chuyển đổi văn bản sang vector (Text Vectorizer).
+- **Công dụng:** Máy tính không hiểu văn bản thô (như "chuyen tien cho người thân" hay "tai khoan bi khoa nhap link"). TF-IDF Vectorizer đóng vai trò là một "cuốn từ điển", đếm tần suất xuất hiện của các từ khóa và mã hóa nội dung giao dịch (chữ) thành một dãy số liên tục (vector).
+- **Tại sao cần thiết:** File joblib này lưu trữ chính xác danh sách các từ vựng và trọng số của chúng đã được học từ tập huấn luyện. Nếu không dùng đúng file này, hệ thống sẽ map sai từ vựng thành mã số, khiến mô hình AI nhận diện sai.
 
-Sau đó dự đoán:
+### 3. `robust_scaler.joblib`
+- **Loại file:** Trình chuẩn hóa dữ liệu (Data Scaler).
+- **Công dụng:** Các dữ liệu số như `Amount` (số tiền giao dịch) và `Time` (thời gian) thường có khoảng giá trị quá lớn và chứa nhiều "giá trị nhiễu" (outliers) - ví dụ một giao dịch vài tỷ đồng giữa hàng ngàn giao dịch vài nghìn đồng. Robust Scaler sẽ co dãn, chuẩn hóa các giá trị này về một hệ quy chiếu chung (thường quanh mức 0) mà không bị bóp méo bởi các giao dịch quá lớn.
+- **Tại sao cần thiết:** Giúp mô hình AI không bị phụ thuộc quá nhiều vào các số tiền khổng lồ, giữ mô hình hoạt động ổn định và chính xác.
 
-```text
-0 -> normal
-1 -> fraud
-```
+### 4. `tabular_columns.joblib`
+- **Loại file:** Danh sách thứ tự các cột dữ liệu (Column Names & Order).
+- **Công dụng:** Lưu lại danh sách chính xác và thứ tự của các đặc trưng dạng bảng (tabular features) mà mô hình đã nhìn thấy khi huấn luyện (Ví dụ: `scaled_amount`, `scaled_time`, `V1`, `V2`, `V3`...).
+- **Tại sao cần thiết:** Khi dự đoán trực tiếp (real-time prediction), Python script cần phải tự tay tạo ra bảng dữ liệu chứa đầy đủ các cột trên theo đúng thứ tự. Nếu sắp xếp sai thứ tự các tính năng (đưa cột Amount nhầm sang vị trí cột Time), XGBoost sẽ cho ra kết quả hoàn toàn sai lệch.
 
-### `tfidf_vectorizer.joblib`
-
-Dùng để mã hóa nội dung chuyển khoản `Transaction_Content`.
-
-Ví dụ text:
-
-```text
-"tai khoan bi khoa chuyen tien gap"
-```
-
-sẽ được biến thành vector số bằng TF-IDF. Vectorizer này phải đúng với vectorizer đã fit trong quá trình train.
-
-### `robust_scaler.joblib`
-
-Dùng để chuẩn hóa các giá trị số như:
-
-```text
-Amount
-Time
-```
-
-Sau khi scale, Python tạo ra:
-
-```text
-scaled_amount
-scaled_time
-```
-
-### `tabular_columns.joblib`
-
-Lưu danh sách các cột tabular mà model đã dùng khi train, đúng thứ tự.
-
-Ví dụ:
-
-```text
-[
-  "scaled_amount",
-  "scaled_time",
-  "V1",
-  "V2",
-  ...
-]
-```
-
-File này rất quan trọng vì lúc predict, backend phải tạo tabular vector đúng thứ tự như khi train. Nếu sai thứ tự cột, model vẫn chạy nhưng kết quả có thể sai.
-
-### `v_feature_means.joblib`
-
-Lưu giá trị trung bình của các cột `V` còn được dùng trong model.
-
-Trong app thật, người dùng chỉ nhập:
-
-```text
-amount, timestamp, content
-```
-
-Nhưng model được train với các cột PCA/ẩn danh như:
-
-```text
-V1, V2, V3, ...
-```
-
-Vì người dùng không nhập các cột `V`, script Python dùng mean từ training dataset để điền giá trị thay thế hợp lý.
+### 5. `v_feature_means.joblib`
+- **Loại file:** Tập hợp các giá trị trung bình (Mean Values Imputation).
+- **Công dụng:** Mô hình XGBoost được huấn luyện bằng tập dữ liệu Kaggle chứa các cột V1 đến V28 (các cột đã được mã hóa ẩn danh bằng thuật toán PCA). Tuy nhiên, trên ứng dụng thực tế, người dùng chỉ nhập vào `số tiền`, `thời gian` và `nội dung chuyển khoản`, không hề nhập các cột V kia.
+- **Tại sao cần thiết:** Để mô hình có thể chạy mà không báo lỗi "thiếu dữ liệu", Python script sẽ dùng file joblib này để lấy giá trị trung bình (mean) của toàn bộ các cột V từ tập huấn luyện và "điền khống" vào cho đủ cột. Điều này giúp hệ thống vẫn đưa ra được suy luận ngay cả khi chỉ có dữ liệu người dùng cung cấp.
 
 ## 4. Biến Môi Trường
 
