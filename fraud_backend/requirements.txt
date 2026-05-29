@@ -1,5 +1,8 @@
+# Legacy local script dependencies.
+# The Docker demo uses ../ai_service/requirements.txt for AI inference.
 joblib
 numpy
 scipy
 scikit-learn
-xgboost
+# Keep the demo image CPU-only. Newer xgboost releases pull large GPU deps.
+xgboost==2.0.3

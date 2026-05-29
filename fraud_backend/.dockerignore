@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log*
+logs
+*.log
+.env
+.env.*
+__pycache__
+*.py[cod]
+.pytest_cache
+.DS_Store
+Dockerfile
+.dockerignore

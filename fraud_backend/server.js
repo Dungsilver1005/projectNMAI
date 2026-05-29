@@ -4,6 +4,8 @@ const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const { errorHandler } = require('./middlewares/error.middleware');
 const transactionRoutes = require('./routes/transaction.routes');
+const healthRoutes = require('./routes/health.routes');
+const fraudEventRoutes = require('./routes/fraudEvent.routes');
 const rateLimit = require('express-rate-limit');
 
 dotenv.config();
@@ -29,7 +31,9 @@ const apiLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 
 // Routes
+app.use('/api/health', healthRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/fraud-events', fraudEventRoutes);
 
 // Error Handling Middleware
 app.use(errorHandler);

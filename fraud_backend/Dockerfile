@@ -1,26 +1,19 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
-# Install Python and pip for the AI integration
-RUN apk add --no-cache python3 py3-pip
-ENV PYTHON_BIN=python3
+ENV NODE_ENV=production
 
-# Set working directory
 WORKDIR /usr/src/app
 
-# Copy package.json and install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci --omit=dev
 
-COPY requirements.txt ./
-RUN pip3 install --no-cache-dir -r requirements.txt
-
-# Copy application files
 COPY . .
 
-# Create logs directory
 RUN mkdir -p logs
 
 EXPOSE 5000
 
-# Start server
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD node -e "require('http').get('http://127.0.0.1:5000/api/health', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"
+
 CMD ["npm", "start"]

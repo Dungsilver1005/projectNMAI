@@ -1,238 +1,190 @@
-# projectNMAI - Fraud Detection AI
+# projectNMAI - Fraud Detection AI Dashboard
 
-Project này là hệ thống phát hiện giao dịch gian lận gồm frontend HTML thuần và backend Node.js/Express. Backend kết hợp hai lớp đánh giá:
+Project này là hệ thống demo phát hiện giao dịch gian lận theo phong cách dashboard admin ngân hàng. Ứng dụng gồm frontend ReactJS, backend Node.js/Express, MongoDB và một AI inference microservice chạy FastAPI.
 
-- Rule-based detection: kiểm tra nhanh bằng luật đơn giản.
-- AI prediction: gọi script Python để chạy mô hình XGBoost đã huấn luyện, kết hợp dữ liệu bảng và nội dung giao dịch.
+Backend kết hợp hai lớp đánh giá:
 
-Kết quả cuối cùng được lưu vào MongoDB và trả về frontend để hiển thị cho người dùng.
+- Rule-based detection: kiểm tra nhanh theo số tiền và nội dung giao dịch.
+- AI prediction: gọi microservice Python để chạy mô hình XGBoost đã huấn luyện.
 
-## 1. Cấu Trúc Project
+Kết quả được lưu vào MongoDB và hiển thị trên dashboard với KPI, bảng giao dịch mới nhất, trạng thái service, enforcement log và log vận hành cập nhật liên tục. Khi giao dịch rủi ro cao, backend ghi log các hành động như chặn giao dịch, khóa thẻ hoặc khóa tài khoản.
+
+## 1. Kiến Trúc
+
+```text
+Frontend dashboard
+    |
+    | HTTP
+    v
+Express backend
+    |                    |
+    | HTTP               | MongoDB driver
+    v                    v
+AI FastAPI service     MongoDB
+    |
+    v
+model_artifacts/*.joblib
+```
+
+Các service chính:
+
+```text
+frontend        -> React dashboard, build bằng Vite, serve bằng nginx
+backend         -> Express API, rule engine, enforcement logic
+ai-service      -> FastAPI inference service, load model XGBoost
+database        -> MongoDB, lưu transactions và fraud events
+```
+
+## 2. Cấu Trúc Project
 
 ```text
 projectNMAI/
 |
 ├── README.md
 ├── Prompt.md
-├── package-lock.json
+├── docker-compose.yml
+├── .dockerignore
+├── .env.example
 |
 ├── frontend/
-|   └── index.html
+|   ├── index.html
+|   ├── package.json
+|   ├── package-lock.json
+|   ├── .env.example
+|   ├── src/
+|   |   ├── main.jsx
+|   |   └── styles.css
+|   ├── Dockerfile
+|   ├── nginx.conf
+|   └── .dockerignore
+|
+├── ai_service/
+|   ├── Dockerfile
+|   ├── requirements.txt
+|   ├── .env.example
+|   └── app/
+|       └── main.py
 |
 └── fraud_backend/
     ├── server.js
     ├── package.json
     ├── package-lock.json
-    ├── requirements.txt
     ├── Dockerfile
-    ├── .env
+    ├── .env.example
+    ├── .dockerignore
     |
     ├── config/
-    |   └── db.js
-    |
     ├── controllers/
-    |   └── transaction.controller.js
-    |
     ├── middlewares/
-    |   ├── validation.middleware.js
-    |   └── error.middleware.js
-    |
     ├── models/
-    |   └── transaction.model.js
-    |
     ├── routes/
-    |   └── transaction.routes.js
-    |
     ├── services/
-    |   ├── fraud.service.js
-    |   ├── preprocess.service.js
-    |   └── predictModel.service.js
-    |
-    ├── python/
-    |   └── predict.py
-    |
-    ├── model_artifacts/
-    |   ├── xgb_fraud_model_combined.joblib
-    |   ├── tfidf_vectorizer.joblib
-    |   ├── robust_scaler.joblib
-    |   ├── tabular_columns.joblib
-    |   └── v_feature_means.joblib
-    |
     ├── utils/
-    |   └── logger.js
-    |
-    └── logs/
-        ├── combined.log
-        └── error.log
+    ├── python/              # legacy local script
+    └── model_artifacts/
+        ├── xgb_fraud_model_combined.joblib
+        ├── tfidf_vectorizer.joblib
+        ├── robust_scaler.joblib
+        ├── tabular_columns.joblib
+        └── v_feature_means.joblib
 ```
 
-## 2. Vai Trò Từng Phần
+## 3. Chạy Demo Bằng Docker Compose
 
-### Frontend
+```powershell
+cd E:\projectNMAI
+copy .env.example .env
+docker compose up --build
+```
 
-File: `frontend/index.html`
-
-Đây là giao diện người dùng. File này đảm nhận:
-
-- Hiển thị form nhập giao dịch.
-- Nhận số tiền, thời gian, nội dung chuyển khoản.
-- Gửi request đến backend qua API `POST http://localhost:5000/api/transactions`.
-- Nhận kết quả từ backend.
-- Hiển thị trạng thái giao dịch là an toàn hoặc gian lận.
-
-Các input chính:
+Các cổng mặc định:
 
 ```text
-amount      -> số tiền giao dịch
-timestamp   -> thời gian giao dịch
-content     -> nội dung chuyển khoản
+Frontend dashboard: http://localhost:8080
+Backend API:         http://localhost:5000
+AI service:          http://localhost:8000
+MongoDB database:    localhost:27017
 ```
 
-### Backend Express
+Trong Docker Compose, backend gọi AI service qua hostname nội bộ:
 
-Thư mục: `fraud_backend/`
-
-Backend đảm nhận:
-
-- Nhận request từ frontend.
-- Validate dữ liệu đầu vào.
-- Chạy rule-based detection.
-- Gọi Python để chạy mô hình AI.
-- Kết hợp kết quả rule-based và AI.
-- Lưu giao dịch vào MongoDB.
-- Trả kết quả về frontend.
-
-### Python AI
-
-File: `fraud_backend/python/predict.py`
-
-Script Python đảm nhận toàn bộ phần inference của mô hình AI:
-
-- Load model XGBoost.
-- Load TF-IDF vectorizer.
-- Load RobustScaler.
-- Load danh sách cột tabular đã dùng khi train.
-- Load giá trị mean của các cột `V`.
-- Tiền xử lý dữ liệu đầu vào.
-- Ghép vector text và vector tabular theo đúng thứ tự lúc huấn luyện.
-- Gọi `model.predict()` và `model.predict_proba()`.
-- Trả kết quả JSON về Node.js.
-
-## 3. Các Artifact Của Mô Hình (`.joblib` files)
-
-Thư mục `fraud_backend/model_artifacts/` chứa các file `.joblib`. Đây là các tham số, bộ quy chuẩn và mô hình AI đã được huấn luyện sẵn (pre-trained). Khi hệ thống dự đoán một giao dịch mới, nó sẽ load các file này lên để tái tạo lại chính xác quy trình biến đổi dữ liệu giống như lúc huấn luyện.
-
-Công dụng chi tiết của từng file:
-
-### 1. `xgb_fraud_model_combined.joblib`
-- **Loại file:** Mô hình học máy (Machine Learning Model).
-- **Thuật toán:** XGBoost (Extreme Gradient Boosting).
-- **Công dụng:** Đây là "bộ não" chính của dự án. Sau khi học từ hàng triệu dữ liệu giao dịch trong quá khứ, mô hình này phân tích đầu vào và tính toán ra một xác suất (probability) giao dịch đó có phải là gian lận hay không.
-- **Đầu vào:** Một vector số duy nhất, là kết quả ghép lại từ (1) Text Features (văn bản) và (2) Tabular Features (số/thời gian) đã được chuẩn hóa.
-- **Đầu ra:** Dự đoán nhãn `0` (An toàn) hoặc `1` (Gian lận) cùng với xác suất cụ thể (ví dụ 95% gian lận).
-
-### 2. `tfidf_vectorizer.joblib`
-- **Loại file:** Trình chuyển đổi văn bản sang vector (Text Vectorizer).
-- **Công dụng:** Máy tính không hiểu văn bản thô (như "chuyen tien cho người thân" hay "tai khoan bi khoa nhap link"). TF-IDF Vectorizer đóng vai trò là một "cuốn từ điển", đếm tần suất xuất hiện của các từ khóa và mã hóa nội dung giao dịch (chữ) thành một dãy số liên tục (vector).
-- **Tại sao cần thiết:** File joblib này lưu trữ chính xác danh sách các từ vựng và trọng số của chúng đã được học từ tập huấn luyện. Nếu không dùng đúng file này, hệ thống sẽ map sai từ vựng thành mã số, khiến mô hình AI nhận diện sai.
-
-### 3. `robust_scaler.joblib`
-- **Loại file:** Trình chuẩn hóa dữ liệu (Data Scaler).
-- **Công dụng:** Các dữ liệu số như `Amount` (số tiền giao dịch) và `Time` (thời gian) thường có khoảng giá trị quá lớn và chứa nhiều "giá trị nhiễu" (outliers) - ví dụ một giao dịch vài tỷ đồng giữa hàng ngàn giao dịch vài nghìn đồng. Robust Scaler sẽ co dãn, chuẩn hóa các giá trị này về một hệ quy chiếu chung (thường quanh mức 0) mà không bị bóp méo bởi các giao dịch quá lớn.
-- **Tại sao cần thiết:** Giúp mô hình AI không bị phụ thuộc quá nhiều vào các số tiền khổng lồ, giữ mô hình hoạt động ổn định và chính xác.
-
-### 4. `tabular_columns.joblib`
-- **Loại file:** Danh sách thứ tự các cột dữ liệu (Column Names & Order).
-- **Công dụng:** Lưu lại danh sách chính xác và thứ tự của các đặc trưng dạng bảng (tabular features) mà mô hình đã nhìn thấy khi huấn luyện (Ví dụ: `scaled_amount`, `scaled_time`, `V1`, `V2`, `V3`...).
-- **Tại sao cần thiết:** Khi dự đoán trực tiếp (real-time prediction), Python script cần phải tự tay tạo ra bảng dữ liệu chứa đầy đủ các cột trên theo đúng thứ tự. Nếu sắp xếp sai thứ tự các tính năng (đưa cột Amount nhầm sang vị trí cột Time), XGBoost sẽ cho ra kết quả hoàn toàn sai lệch.
-
-### 5. `v_feature_means.joblib`
-- **Loại file:** Tập hợp các giá trị trung bình (Mean Values Imputation).
-- **Công dụng:** Mô hình XGBoost được huấn luyện bằng tập dữ liệu Kaggle chứa các cột V1 đến V28 (các cột đã được mã hóa ẩn danh bằng thuật toán PCA). Tuy nhiên, trên ứng dụng thực tế, người dùng chỉ nhập vào `số tiền`, `thời gian` và `nội dung chuyển khoản`, không hề nhập các cột V kia.
-- **Tại sao cần thiết:** Để mô hình có thể chạy mà không báo lỗi "thiếu dữ liệu", Python script sẽ dùng file joblib này để lấy giá trị trung bình (mean) của toàn bộ các cột V từ tập huấn luyện và "điền khống" vào cho đủ cột. Điều này giúp hệ thống vẫn đưa ra được suy luận ngay cả khi chỉ có dữ liệu người dùng cung cấp.
+```env
+AI_SERVICE_URL=http://ai-service:8000
+```
 
 ## 4. Biến Môi Trường
 
-File: `fraud_backend/.env`
-
-Các biến chính:
+Backend:
 
 ```env
 PORT=5000
 MONGO_URI=mongodb://localhost:27017/fraud_detection
-PYTHON_BIN=C:\Users\ACER\AppData\Local\Programs\Python\Python313\python.exe
+AI_SERVICE_URL=http://localhost:8000
+AI_SERVICE_TIMEOUT_MS=8000
 ```
 
-Ý nghĩa:
+Frontend:
 
-- `PORT`: port chạy backend Express.
-- `MONGO_URI`: chuỗi kết nối MongoDB.
-- `PYTHON_BIN`: đường dẫn Python có cài các thư viện AI như `joblib`, `scikit-learn`, `xgboost`.
+```env
+VITE_API_BASE_URL=http://localhost:5000
+```
 
-Nếu không có `PYTHON_BIN`, backend sẽ gọi mặc định là `python`. Điều này có thể lỗi nếu máy có nhiều Python khác nhau.
+AI service:
 
-## 5. Cài Đặt Và Chạy Project
+```env
+MODEL_ARTIFACT_DIR=fraud_backend/model_artifacts
+```
 
-### Cài dependency Node.js
+Các file `.env.example` được commit để làm mẫu. File `.env` thật bị ignore và không nên đưa lên GitHub.
+
+## 5. Chạy Local Không Docker
+
+### MongoDB
+
+Chạy MongoDB local ở:
+
+```text
+mongodb://localhost:27017/fraud_detection
+```
+
+### AI Service
+
+```powershell
+cd E:\projectNMAI
+python -m pip install -r ai_service\requirements.txt
+set MODEL_ARTIFACT_DIR=fraud_backend\model_artifacts
+uvicorn ai_service.app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Backend
 
 ```powershell
 cd E:\projectNMAI\fraud_backend
 npm install
-```
-
-### Cài dependency Python
-
-```powershell
-cd E:\projectNMAI\fraud_backend
-python -m pip install -r requirements.txt
-```
-
-File `requirements.txt` gồm:
-
-```text
-joblib
-numpy
-scipy
-scikit-learn
-xgboost
-```
-
-### Chạy backend
-
-```powershell
-cd E:\projectNMAI\fraud_backend
 npm run dev
 ```
 
-hoặc:
+### Frontend
 
 ```powershell
-npm start
+cd E:\projectNMAI\frontend
+npm install
+npm run dev
 ```
 
-Backend mặc định chạy tại:
-
-```text
-http://localhost:5000
-```
-
-### Mở frontend
-
-Mở file:
-
-```text
-frontend/index.html
-```
-
-Frontend sẽ gọi API:
-
-```text
-POST http://localhost:5000/api/transactions
-```
+Khi chạy bằng Docker, React sẽ được build thành static assets và nginx serve ở `http://localhost:8080`.
 
 ## 6. API Chính
 
-### Tạo giao dịch và đánh giá gian lận
+### Health Check
+
+```http
+GET /api/health
+```
+
+Response gồm trạng thái backend, MongoDB và AI service.
+
+### Tạo Giao Dịch Và Đánh Giá Gian Lận
 
 ```http
 POST /api/transactions
@@ -242,9 +194,16 @@ Request body:
 
 ```json
 {
+  "account_id": "ACC-778801",
+  "card_id": "CARD-9001",
+  "customer_name": "Tran Bao Long",
   "amount": 9000000,
+  "currency": "VND",
   "timestamp": "2026-05-25T02:30:00.000Z",
-  "content": "tai khoan bi khoa chuyen tien gap"
+  "content": "tai khoan bi khoa chuyen tien gap",
+  "merchant": "Unknown Gateway",
+  "channel": "internet_banking",
+  "location": "Unknown IP"
 }
 ```
 
@@ -254,831 +213,195 @@ Response thành công:
 {
   "success": true,
   "data": {
-    "transaction": {
-      "amount": 9000000,
-      "timestamp": "2026-05-25T02:30:00.000Z",
-      "content": "tai khoan bi khoa chuyen tien gap",
-      "rule_based_result": "normal",
-      "ai_result": "fraud",
-      "final_result": "fraud"
-    },
-    "rule_based_result": "normal",
+    "rule_based_result": "fraud",
     "ai_result": "fraud",
-    "final_result": "fraud"
+    "final_result": "fraud",
+    "ai_probability": 0.9987,
+    "risk_score": 0.9987,
+    "risk_level": "high",
+    "ai_service_status": "online",
+    "transaction_status": "blocked",
+    "account_status": "locked",
+    "card_status": "blocked",
+    "enforcement_actions": [
+      "transaction_blocked",
+      "account_locked",
+      "card_blocked"
+    ],
+    "decision_notes": [
+      "Nội dung chứa tín hiệu rủi ro: khoa",
+      "Mô hình AI đánh dấu giao dịch gian lận"
+    ]
   }
 }
 ```
 
-### Lấy danh sách giao dịch
+### Lấy Danh Sách Giao Dịch
 
 ```http
-GET /api/transactions?page=1&limit=10
+GET /api/transactions?page=1&limit=12
 ```
 
-API này trả danh sách transaction mới nhất, có phân trang.
+API trả danh sách transaction mới nhất, có phân trang.
 
-### Lấy thống kê
+### Lấy Thống Kê Dashboard
 
 ```http
 GET /api/transactions/stats
 ```
 
-API này trả:
+Các field chính:
 
 ```text
-total        -> tổng số giao dịch
-fraud_count  -> số giao dịch gian lận
-normal_count -> số giao dịch bình thường
+total
+fraud_count
+normal_count
+high_risk_count
+medium_risk_count
+fraud_rate
+total_amount
+fraud_amount
+average_risk_score
+blocked_transactions
+locked_accounts_count
+blocked_cards_count
+enforcement_count
+last_checked_at
 ```
 
-## 7. Biểu Đồ Luồng Tổng Thể
+### Lấy Enforcement Log
+
+```http
+GET /api/fraud-events?page=1&limit=12
+```
+
+Event types:
+
+```text
+transaction_blocked
+card_blocked
+account_locked
+manual_review
+```
+
+### AI Microservice
+
+```http
+GET  /health
+POST /predict
+```
+
+Backend gửi payload đã chuẩn hóa sang `POST /predict`:
+
+```json
+{
+  "amount": 9000000,
+  "time": 1779651000,
+  "timestamp": "2026-05-25T02:30:00.000Z",
+  "Transaction_Content": "tai khoan bi khoa chuyen tien gap"
+}
+```
+
+AI service trả:
+
+```json
+{
+  "success": true,
+  "data": {
+    "prediction": "fraud",
+    "confidence": 0.9987,
+    "fraud_probability": 0.9987,
+    "model": "xgb_fraud_model_combined"
+  }
+}
+```
+
+## 7. Luồng Xử Lý
 
 ```mermaid
 flowchart TD
-    A["Người dùng nhập amount, timestamp, content"] --> B["frontend/index.html"]
-    B --> C["Tạo JSON payload"]
-    C --> D["POST /api/transactions"]
-    D --> E["server.js"]
-    E --> F["transaction.routes.js"]
-    F --> G["validation.middleware.js"]
-    G --> H{"Dữ liệu hợp lệ?"}
-    H -- "Không" --> I["Trả HTTP 400 về frontend"]
-    H -- "Có" --> J["transaction.controller.js:createTransaction"]
-    J --> K["fraud.service.js:assessFraud"]
-    K --> L["Rule-based detection"]
-    K --> M["preprocess.service.js:preprocessTransaction"]
-    M --> N["predictModel.service.js:predictModel"]
-    N --> O["Spawn Python process"]
-    O --> P["python/predict.py"]
-    P --> Q["Load model_artifacts/*.joblib"]
-    Q --> R["TF-IDF mã hóa Transaction_Content"]
-    Q --> S["RobustScaler scale Amount/Time"]
-    Q --> T["Điền V features bằng v_feature_means"]
-    R --> U["Ghép X = [X_text, X_tabular]"]
-    S --> U
-    T --> U
-    U --> V["XGBoost predict"]
-    V --> W["Trả JSON prediction về Node"]
-    W --> X["fraud.service.js kết hợp rule + AI"]
-    X --> Y["transaction.controller.js lưu MongoDB"]
-    Y --> Z["Trả kết quả về frontend"]
-    Z --> AA["showResult hiển thị normal/fraud"]
+    A["Admin nhập giao dịch"] --> B["React dashboard"]
+    B --> C["POST /api/transactions"]
+    C --> D["Express backend"]
+    D --> E["validateTransaction"]
+    E --> F["transaction.controller.js"]
+    F --> G["fraud.service.js"]
+    G --> H["Rule-based detection"]
+    G --> I["preprocessTransaction"]
+    I --> J["predictModel.service.js"]
+    J --> K["POST AI /predict"]
+    K --> L["FastAPI load model_artifacts"]
+    L --> M["TF-IDF + tabular features"]
+    M --> N["XGBoost predict"]
+    N --> O["prediction + fraud_probability"]
+    O --> P["risk_score + final_result"]
+    P --> Q["MongoDB Transaction.create"]
+    Q --> R{"Có enforcement action?"}
+    R -- "Có" --> S["FraudEvent.create"]
+    R -- "Không" --> T["Dashboard cập nhật transactions"]
+    S --> U["Dashboard cập nhật fraud-events + ops log"]
 ```
 
-## 8. Luồng Code Chi Tiết Từ Frontend Đến MongoDB
+## 8. Model Artifacts
 
-### Bước 1: Người dùng nhập giao dịch
+Thư mục `fraud_backend/model_artifacts/` chứa các file `.joblib` dùng cho inference:
 
-Người dùng thao tác tại `frontend/index.html`.
+- `xgb_fraud_model_combined.joblib`: mô hình XGBoost.
+- `tfidf_vectorizer.joblib`: vectorizer cho nội dung giao dịch.
+- `robust_scaler.joblib`: scaler cho `Amount` và `Time`.
+- `tabular_columns.joblib`: danh sách và thứ tự cột tabular khi train.
+- `v_feature_means.joblib`: giá trị mean cho các cột `V1` đến `V28`.
 
-Các trường trên form:
+AI service copy các artifact này vào image tại `/app/model_artifacts`.
 
-```html
-<input type="number" id="txAmount">
-<input type="datetime-local" id="txTime">
-<textarea id="txContent"></textarea>
-```
+## 9. Dashboard
 
-Khi bấm nút phân tích, frontend bắt sự kiện:
+Dashboard React trong `frontend/src/main.jsx` gồm:
+
+- KPI tổng giao dịch, giao dịch bị chặn, tài khoản/thẻ bị khóa, điểm rủi ro trung bình.
+- Form kiểm tra giao dịch mới với tài khoản, thẻ, khách hàng, kênh, merchant và vị trí.
+- Trạng thái backend, MongoDB, AI service.
+- Bảng giao dịch mới nhất.
+- Enforcement log cho tài khoản/thẻ/giao dịch bị xử lý.
+- Ops stream cập nhật liên tục bằng polling.
+
+Frontend mặc định gọi backend ở:
 
 ```js
-form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    ...
-});
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 ```
 
-Frontend tạo payload:
+## 10. Ghi Log Và Fallback
 
-```js
-const payload = {
-    amount: parseFloat(document.getElementById('txAmount').value),
-    timestamp: new Date(document.getElementById('txTime').value).toISOString(),
-    content: document.getElementById('txContent').value
-};
-```
-
-Ý nghĩa:
-
-- `amount` được ép thành số thực.
-- `timestamp` được chuyển thành ISO string.
-- `content` giữ nguyên nội dung chuyển khoản người dùng nhập.
-
-Sau đó gửi request:
-
-```js
-fetch('http://localhost:5000/api/transactions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-});
-```
-
-### Bước 2: Express nhận request
-
-File: `fraud_backend/server.js`
-
-Khi backend chạy, `server.js` thực hiện:
-
-```js
-dotenv.config();
-connectDB();
-app.use(cors());
-app.use(express.json());
-app.use('/api/', apiLimiter);
-app.use('/api/transactions', transactionRoutes);
-app.use(errorHandler);
-```
-
-Ý nghĩa:
-
-- `dotenv.config()` đọc `.env`.
-- `connectDB()` kết nối MongoDB.
-- `cors()` cho phép frontend gọi API.
-- `express.json()` giúp Express đọc JSON body.
-- `apiLimiter` giới hạn 100 request mỗi 15 phút cho `/api/*`.
-- `/api/transactions` được chuyển sang route trong `transaction.routes.js`.
-- `errorHandler` xử lý lỗi tập trung.
-
-### Bước 3: Route điều hướng request
-
-File: `fraud_backend/routes/transaction.routes.js`
-
-Route chính:
-
-```js
-router.post('/', validateTransaction, createTransaction);
-```
-
-Với request:
+Backend dùng Winston:
 
 ```text
-POST /api/transactions
+logs/error.log
+logs/combined.log
+console
 ```
 
-Express sẽ chạy theo thứ tự:
+Nếu AI service lỗi hoặc timeout:
 
-```text
-validateTransaction -> createTransaction
-```
-
-### Bước 4: Validate dữ liệu đầu vào
-
-File: `fraud_backend/middlewares/validation.middleware.js`
-
-Middleware dùng Joi để kiểm tra:
-
-```js
-amount: Joi.number().positive().required()
-timestamp: Joi.date().iso().required()
-content: Joi.string().allow('', null).optional()
-```
-
-Nếu dữ liệu sai, backend trả:
-
-```json
-{
-  "success": false,
-  "message": "Amount must be greater than 0"
-}
-```
-
-Nếu dữ liệu đúng, middleware gọi:
-
-```js
-next();
-```
-
-và request đi tiếp vào controller.
-
-### Bước 5: Controller nhận dữ liệu và gọi service
-
-File: `fraud_backend/controllers/transaction.controller.js`
-
-Hàm xử lý:
-
-```js
-createTransaction(req, res, next)
-```
-
-Controller lấy dữ liệu:
-
-```js
-const { amount, timestamp, content } = req.body;
-```
-
-Sau đó gọi:
-
-```js
-const evaluation = await assessFraud(amount, timestamp, content);
-```
-
-Hàm `assessFraud` nằm trong:
-
-```text
-fraud_backend/services/fraud.service.js
-```
-
-### Bước 6: Fraud service chạy rule-based detection
-
-File: `fraud_backend/services/fraud.service.js`
-
-Hàm chính:
-
-```js
-assessFraud(amount, timestamp, content)
-```
-
-Đầu tiên service tạo kết quả mặc định:
-
-```js
-let rule_based_result = "normal";
-```
-
-Sau đó kiểm tra số tiền:
-
-```js
-if (amount > 500_000_000) {
-    rule_based_result = "fraud";
-}
-```
-
-Nếu số tiền lớn hơn 500 triệu, rule-based đánh dấu là gian lận.
-
-Tiếp theo kiểm tra nội dung:
-
-```js
-if (lowerContent.includes('hack') ||
-    lowerContent.includes('scam') ||
-    lowerContent.includes('fake')) {
-    rule_based_result = "fraud";
-}
-```
-
-Nếu nội dung chứa `hack`, `scam`, hoặc `fake`, rule-based cũng đánh dấu là gian lận.
-
-### Bước 7: Node tiền xử lý dữ liệu thô trước khi gửi Python
-
-File: `fraud_backend/services/preprocess.service.js`
-
-Hàm:
-
-```js
-preprocessTransaction(amount, timestamp, content)
-```
-
-Hàm này chưa chạy model. Nó chỉ chuẩn hóa payload để gửi sang Python:
-
-```js
-return {
-    amount,
-    time: Math.floor(safeDate.getTime() / 1000),
-    timestamp,
-    Transaction_Content: content || ""
-};
-```
-
-Ý nghĩa:
-
-- `amount`: giữ nguyên số tiền.
-- `time`: chuyển timestamp thành Unix timestamp tính bằng giây.
-- `timestamp`: giữ lại ISO timestamp gốc.
-- `Transaction_Content`: đổi tên `content` thành đúng tên feature text mà pipeline model dùng.
-
-Các cột `V` không được tạo ở Node. Python sẽ điền bằng `v_feature_means.joblib`.
-
-### Bước 8: Node gọi Python prediction script
-
-File: `fraud_backend/services/predictModel.service.js`
-
-Hàm:
-
-```js
-predictModel(features)
-```
-
-Service này gọi Python bằng:
-
-```js
-const pythonBin = process.env.PYTHON_BIN || 'python';
-const pythonProcess = spawn(pythonBin, [scriptPath]);
-```
-
-Trong đó:
-
-```js
-scriptPath = fraud_backend/python/predict.py
-```
-
-Node gửi dữ liệu sang Python qua `stdin`:
-
-```js
-pythonProcess.stdin.write(inputData);
-pythonProcess.stdin.end();
-```
-
-Python trả kết quả về Node qua `stdout`.
-
-Nếu Python lỗi, service ghi log và fallback:
-
-```js
-resolve({ prediction: "normal" });
-```
-
-Điều này giúp backend không crash khi model gặp lỗi, nhưng cũng có nghĩa là lỗi model có thể làm AI tạm trả normal.
-
-### Bước 9: Python load artifacts
-
-File: `fraud_backend/python/predict.py`
-
-Khi chạy, script định nghĩa các đường dẫn:
-
-```python
-MODEL_PATH = ARTIFACT_DIR / "xgb_fraud_model_combined.joblib"
-VECTORIZER_PATH = ARTIFACT_DIR / "tfidf_vectorizer.joblib"
-SCALER_PATH = ARTIFACT_DIR / "robust_scaler.joblib"
-TABULAR_COLUMNS_PATH = ARTIFACT_DIR / "tabular_columns.joblib"
-V_FEATURE_MEANS_PATH = ARTIFACT_DIR / "v_feature_means.joblib"
-```
-
-Hàm:
-
-```python
-load_artifacts()
-```
-
-load các artifact bằng `joblib.load()`:
-
-```python
-MODEL = joblib.load(MODEL_PATH)
-VECTORIZER = joblib.load(VECTORIZER_PATH)
-SCALER = joblib.load(SCALER_PATH)
-TABULAR_COLUMNS = list(joblib.load(TABULAR_COLUMNS_PATH))
-V_FEATURE_MEANS = joblib.load(V_FEATURE_MEANS_PATH)
-```
-
-Các biến này được cache trong process Python.
-
-### Bước 10: Python xử lý thời gian và số tiền
-
-Trong `predict.py`, hàm:
-
-```python
-get_amount_and_time(input_data)
-```
-
-lấy:
-
-```python
-amount = float(input_data.get("amount") or input_data.get("Amount") or 0)
-time_value = float(input_data.get("time") or input_data.get("Time") or timestamp.timestamp())
-```
-
-Nếu timestamp là chuỗi ISO, hàm:
-
-```python
-parse_timestamp(value)
-```
-
-sẽ parse thành `datetime`.
-
-Nếu timestamp là Unix milliseconds, script tự chia về seconds:
-
-```python
-if value > 1e10:
-    value = value / 1000.0
-```
-
-### Bước 11: Python scale Amount và Time
-
-Hàm:
-
-```python
-scale_amount_and_time(input_data, scaler)
-```
-
-dùng `robust_scaler.joblib` để scale `amount` và `time`.
-
-Kết quả tạo:
-
-```python
-{
-    "scaled_amount": ...,
-    "scaled_time": ...
-}
-```
-
-Nếu scaler có `feature_names_in_`, script dùng tên cột để map chính xác. Nếu không có, script dựa vào `n_features_in_`.
-
-### Bước 12: Python tạo tabular features
-
-Hàm:
-
-```python
-build_tabular_features(input_data, scaler, tabular_columns, v_feature_means)
-```
-
-Hàm này tạo một row dữ liệu bảng:
-
-```python
-row = {
-    "scaled_amount": scaled_features["scaled_amount"],
-    "scaled_time": scaled_features["scaled_time"],
-}
-```
-
-Với các cột `V`, script xử lý:
-
-```python
-if column.startswith("V"):
-    row[column] = float(input_data.get(column, v_feature_means.get(column, 0)))
-```
-
-Ý nghĩa:
-
-- Nếu input có sẵn `V1`, `V2`, ... thì dùng giá trị input.
-- Nếu input không có, dùng mean từ `v_feature_means.joblib`.
-- Nếu mean cũng không có, fallback về `0`.
-
-Sau đó script tạo vector đúng thứ tự:
-
-```python
-values = [row.get(column, float(input_data.get(column, 0))) for column in tabular_columns]
-```
-
-`tabular_columns` đảm bảo thứ tự cột giống lúc huấn luyện.
-
-### Bước 13: Python mã hóa nội dung chuyển khoản bằng TF-IDF
-
-Hàm:
-
-```python
-get_content(input_data)
-```
-
-lấy text từ:
-
-```python
-Transaction_Content
-content
-processed_content
-```
-
-Sau đó trong `predict()`:
-
-```python
-text_features = vectorizer.transform([str(get_content(input_data)).lower()])
-```
-
-Đây là bước mã hóa chữ thành vector số. Ví dụ:
-
-```text
-"tai khoan bi khoa chuyen tien gap"
-```
-
-được biến thành sparse vector TF-IDF.
-
-### Bước 14: Python ghép feature đúng thứ tự train
-
-Trong notebook huấn luyện, model combined được train theo dạng:
-
-```python
-X = hstack([X_text, X_tabular])
-```
-
-Vì vậy trong backend, `predict.py` cũng ghép đúng thứ tự:
-
-```python
-combined_features = hstack([text_features, csr_matrix(tabular_features)])
-```
-
-Thứ tự này rất quan trọng:
-
-```text
-TF-IDF features đứng trước
-Tabular features đứng sau
-```
-
-Nếu đảo ngược thứ tự, model có thể vẫn chạy nhưng dự đoán sai.
-
-### Bước 15: Python gọi XGBoost để dự đoán
-
-Trong `predict.py`, hàm:
-
-```python
-predict(input_data)
-```
-
-gọi:
-
-```python
-predicted_class = model.predict(combined_features)[0]
-```
-
-Sau đó đổi class sang label:
-
-```python
-prediction = class_to_label(predicted_class)
-```
-
-Mapping:
-
-```text
-0 -> normal
-1 -> fraud
-```
-
-Nếu model hỗ trợ probability, script gọi thêm:
-
-```python
-probabilities = model.predict_proba(combined_features)[0]
-```
-
-Kết quả Python trả về Node dạng JSON:
-
-```json
-{
-  "prediction": "fraud",
-  "probability": 0.9987
-}
-```
-
-### Bước 16: Node nhận kết quả AI
-
-File: `fraud_backend/services/predictModel.service.js`
-
-Node đọc stdout:
-
-```js
-pythonProcess.stdout.on('data', (data) => {
-    outputData += data.toString();
-});
-```
-
-Khi Python process đóng, Node parse JSON:
-
-```js
-const result = JSON.parse(outputData);
-resolve(result);
-```
-
-Kết quả quay lại `fraud.service.js`.
-
-### Bước 17: Kết hợp rule-based và AI
-
-File: `fraud_backend/services/fraud.service.js`
-
-Sau khi có `ai_result`, service tính:
-
-```js
-const final_result =
-    (rule_based_result === 'fraud' || ai_result === 'fraud')
-        ? 'fraud'
-        : 'normal';
-```
-
-Tức là:
-
-```text
-Nếu rule-based hoặc AI báo fraud -> final_result = fraud
-Nếu cả hai đều normal -> final_result = normal
-```
-
-Kết quả trả về controller:
-
-```js
-return {
-    rule_based_result,
-    ai_result,
-    final_result
-};
-```
-
-### Bước 18: Lưu MongoDB
-
-File: `fraud_backend/controllers/transaction.controller.js`
-
-Controller lưu transaction:
-
-```js
-const transaction = await Transaction.create({
-    amount,
-    timestamp,
-    content: content || "",
-    rule_based_result: evaluation.rule_based_result,
-    ai_result: evaluation.ai_result,
-    final_result: evaluation.final_result
-});
-```
-
-Schema nằm trong:
-
-```text
-fraud_backend/models/transaction.model.js
-```
-
-Các field được lưu:
-
-```text
-amount
-timestamp
-content
-rule_based_result
-ai_result
-final_result
-createdAt
-updatedAt
-```
-
-### Bước 19: Backend trả response về frontend
-
-Controller trả:
-
-```js
-res.status(201).json({
-    success: true,
-    data: {
-        transaction,
-        rule_based_result: evaluation.rule_based_result,
-        ai_result: evaluation.ai_result,
-        final_result: evaluation.final_result
-    }
-});
-```
-
-### Bước 20: Frontend hiển thị kết quả
-
-Trong `frontend/index.html`, sau khi nhận response:
-
-```js
-if(data.success) {
-    showResult(data.data.final_result, data.data.rule_based_result, data.data.ai_result);
-}
-```
-
-Hàm:
-
-```js
-showResult(finalResult, ruleRes, aiRes)
-```
-
-nếu `finalResult === 'fraud'`:
-
-- đổi card sang màu đỏ.
-- icon cảnh báo.
-- badge "Rủi Ro Cao - Gian Lận".
-- hiển thị rule result và AI result.
-
-nếu `finalResult === 'normal'`:
-
-- đổi card sang màu xanh.
-- icon an toàn.
-- badge "An Toàn & Đã Kiểm Chứng".
-- hiển thị rule result và AI result.
-
-## 9. Biểu Đồ Sequence Chi Tiết
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant FE as frontend/index.html
-    participant API as Express server.js
-    participant R as transaction.routes.js
-    participant V as validation.middleware.js
-    participant C as transaction.controller.js
-    participant F as fraud.service.js
-    participant P as preprocess.service.js
-    participant PM as predictModel.service.js
-    participant PY as python/predict.py
-    participant M as model_artifacts
-    participant DB as MongoDB
-
-    U->>FE: Nhập amount, timestamp, content
-    FE->>FE: Tạo payload JSON
-    FE->>API: POST /api/transactions
-    API->>R: Chuyển request vào transactionRoutes
-    R->>V: validateTransaction
-    V-->>R: next nếu hợp lệ
-    R->>C: createTransaction
-    C->>F: assessFraud(amount, timestamp, content)
-    F->>F: Kiểm tra rule-based
-    F->>P: preprocessTransaction
-    P-->>F: amount, time, timestamp, Transaction_Content
-    F->>PM: predictModel(features)
-    PM->>PY: spawn Python và gửi JSON qua stdin
-    PY->>M: Load XGBoost, TF-IDF, scaler, tabular cols, V means
-    PY->>PY: Scale amount/time
-    PY->>PY: Điền V features
-    PY->>PY: Vectorize Transaction_Content bằng TF-IDF
-    PY->>PY: Ghép [X_text, X_tabular]
-    PY->>PY: model.predict()
-    PY-->>PM: JSON prediction
-    PM-->>F: ai_result
-    F->>F: final_result = rule fraud OR AI fraud
-    F-->>C: evaluation
-    C->>DB: Transaction.create(...)
-    DB-->>C: transaction đã lưu
-    C-->>FE: JSON response
-    FE->>FE: showResult(...)
-    FE-->>U: Hiển thị normal hoặc fraud
-```
-
-## 10. Ghi Log Và Xử Lý Lỗi
-
-### Logger
-
-File: `fraud_backend/utils/logger.js`
-
-Project dùng Winston để log:
-
-```text
-logs/error.log     -> lỗi
-logs/combined.log  -> log tổng hợp
-console            -> log ra terminal
-```
-
-### Error middleware
-
-File: `fraud_backend/middlewares/error.middleware.js`
-
-Nếu controller/service gọi `next(error)`, middleware này trả JSON lỗi:
-
-```json
-{
-  "success": false,
-  "message": "Internal Server Error",
-  "stack": "..."
-}
-```
-
-Trong production, `stack` sẽ bị ẩn.
-
-### Fallback khi AI lỗi
-
-Nếu Python script lỗi hoặc stdout không parse được JSON, `predictModel.service.js` fallback:
-
-```js
-resolve({ prediction: "normal" });
-```
-
-Điều này giúp API không bị crash, nhưng cần xem log để phát hiện lỗi model.
-
-## 11. Kiểm Tra Nhanh
-
-### Test Python trực tiếp
-
-```powershell
-cd E:\projectNMAI\fraud_backend
-'{"amount":500000,"timestamp":"2026-05-25T00:00:00.000Z","Transaction_Content":"thanh toan internet 500k"}' | python python\predict.py
-```
-
-Kết quả kỳ vọng:
-
-```json
-{"prediction":"normal","probability":...}
-```
-
-### Test API
-
-```powershell
-$body = @{
-  amount = 9000000
-  timestamp = "2026-05-25T02:30:00.000Z"
-  content = "tai khoan bi khoa chuyen tien gap"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Method Post `
-  -Uri "http://localhost:5000/api/transactions" `
-  -ContentType "application/json" `
-  -Body $body
-```
-
-Kết quả kỳ vọng:
-
-```text
-ai_result = fraud
-final_result = fraud
-```
+- Backend không crash.
+- `fraud.service.js` dùng rule-based fallback.
+- Transaction lưu `ai_service_status = fallback`.
+- Dashboard vẫn hiển thị kết quả và log vận hành.
 
-## 12. Lưu Ý Quan Trọng Khi Train Lại Model
+## 11. Lưu Ý Khi Train Lại Model
 
-Nếu train lại model, cần cập nhật đồng bộ các artifact:
+Nếu train lại model, cần cập nhật đồng bộ toàn bộ artifact:
 
 ```python
 joblib.dump(xgb_model_combined, "xgb_fraud_model_combined.joblib")
 joblib.dump(tfidf, "tfidf_vectorizer.joblib")
 joblib.dump(scaler, "robust_scaler.joblib")
-joblib.dump(tabular_cols, "tabular_columns.joblib")
+joblib.dump(tabular_columns, "tabular_columns.joblib")
 joblib.dump(v_feature_means, "v_feature_means.joblib")
 ```
 
-Các artifact này phải đến từ cùng một lần train. Không nên trộn model mới với vectorizer/scaler cũ, vì feature space có thể lệch.
-
-Điều bắt buộc phải giữ đúng:
+Thứ tự feature khi inference phải giữ đúng:
 
 ```text
-X = hstack([X_text, X_tabular])
+X = [TF-IDF text features, tabular features]
 ```
-
-Nếu trong notebook train dùng text trước tabular, thì backend cũng phải ghép text trước tabular như hiện tại.
-
