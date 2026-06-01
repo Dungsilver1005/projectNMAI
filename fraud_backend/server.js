@@ -6,7 +6,10 @@ const { errorHandler } = require('./middlewares/error.middleware');
 const transactionRoutes = require('./routes/transaction.routes');
 const healthRoutes = require('./routes/health.routes');
 const fraudEventRoutes = require('./routes/fraudEvent.routes');
-const rateLimit = require('express-rate-limit');
+const {
+    dashboardReadLimiter,
+    healthLimiter
+} = require('./middlewares/rateLimit.middleware');
 
 dotenv.config();
 
@@ -19,21 +22,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Rate limiting middleware
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per window
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, please try again after 15 minutes'
-  }
-});
-app.use('/api/', apiLimiter);
-
 // Routes
-app.use('/api/health', healthRoutes);
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/fraud-events', fraudEventRoutes);
+app.use('/api/health', healthLimiter, healthRoutes);
+app.use('/api/transactions', dashboardReadLimiter, transactionRoutes);
+app.use('/api/fraud-events', dashboardReadLimiter, fraudEventRoutes);
 
 // Error Handling Middleware
 app.use(errorHandler);

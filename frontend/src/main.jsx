@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity,
@@ -22,7 +22,7 @@ import {
 import './styles.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-const REFRESH_MS = 4000;
+const REFRESH_MS = 10000;
 
 const emptyForm = {
   account_id: 'ACC-102934',
@@ -127,6 +127,7 @@ function App() {
   const [opsLog, setOpsLog] = useState(['Dashboard khởi tạo, chờ dữ liệu từ API gateway']);
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const syncInFlight = useRef(false);
 
   const avgRisk = Math.round((stats.average_risk_score || 0) * 100);
   const healthState = useMemo(() => ({
@@ -140,6 +141,11 @@ function App() {
   };
 
   const loadAll = async ({ announce = false } = {}) => {
+    if (syncInFlight.current) {
+      return;
+    }
+
+    syncInFlight.current = true;
     try {
       const [healthRes, statsRes, txRes, eventRes] = await Promise.all([
         api('/api/health'),
@@ -156,6 +162,8 @@ function App() {
       if (announce) pushLog('Đồng bộ dashboard thành công');
     } catch (error) {
       pushLog(`Lỗi đồng bộ: ${error.message}`);
+    } finally {
+      syncInFlight.current = false;
     }
   };
 
