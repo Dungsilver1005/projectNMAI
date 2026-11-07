@@ -1,4 +1,5 @@
-export function calculateDiscountedTotal(total, percent) { // Tính tổng tiền sau giảm giá
+// Kiểm tra dữ liệu đầu vào và tính tổng tiền sau giảm giá.
+export function calculateDiscountedTotal(total, percent) {
   if (!Number.isFinite(total) || total < 0) {
     throw new RangeError('Invalid total amount');
   }
