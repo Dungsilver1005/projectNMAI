@@ -18,10 +18,12 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Fraud detection use-case documentation.
 - Pull Request template for standardized code review.
 
+## [1.0.1] - 2026-11-07
+
 ### Fixed
-- Handle null entries in transaction summaries.
-- Prevent invalid transaction amounts from displaying `NaN VND`.
-- Correct discount calculations and validate discount percentages.
+- Fix whitespace-only transaction amounts displaying `0 VND`.
+- Display `-- VND` for invalid whitespace-only amounts.
+- Add regression test for whitespace-only transaction amounts.
 
 ### Changed
 - Improved project documentation and Git workflow.
