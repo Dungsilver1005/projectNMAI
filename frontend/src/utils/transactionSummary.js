@@ -5,9 +5,16 @@ export function formatTransactionSummary(transactions = []) {
 
   return transactions.map((rawTx, index) => {
   const tx = rawTx ?? {};
-    const numericAmount = Number(tx.amount ?? 0);
+    const rawAmount = tx.amount;
 
-const amount = Number.isFinite(numericAmount)
+const isBlankAmount =
+  typeof rawAmount === 'string' && rawAmount.trim() === '';
+
+const numericAmount = Number(rawAmount ?? 0);
+
+const amount = isBlankAmount || !Number.isFinite(numericAmount)
+  ? '--'
+  : numericAmount.toLocaleString('vi-VN');
   ? numericAmount.toLocaleString('vi-VN')
   : '--';
 
