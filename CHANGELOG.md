@@ -2,12 +2,14 @@
 
 All notable changes to the project will be documented in this file.
 
-The format is based on Keep a Changelog, and this project uses Semantic Versioning.
-
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-07
+
 ### Added
-- Future features and improvements will be documented here.
+- Transaction sorting by account ID and amount.
+- Transaction search by status.
+- Unit tests for transaction sorting and status searching.
 
 ## [1.0.0] - 2026-11-07
 
@@ -17,6 +19,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Discount calculation utility.
 - Fraud detection use-case documentation.
 - Pull Request template for standardized code review.
+- Transaction sorting by account ID and amount.
+- Regression tests for transaction sorting.
 
 ### Fixed
 - Handle null entries in transaction summaries.
