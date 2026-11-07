@@ -3,7 +3,8 @@ export function formatTransactionSummary(transactions = []) {
     return 'Chưa có dữ liệu giao dịch';
   }
 
-  return transactions.map((tx, index) => {
+  return transactions.map((rawTx, index) => {
+  const tx = rawTx ?? {};
     const amount = Number(tx.amount ?? 0).toLocaleString('vi-VN');
 
     return `${index + 1}. ${tx.account_id ?? '--'} | ${amount} VND | ${tx.transaction_status ?? tx.final_result ?? '--'}`;
