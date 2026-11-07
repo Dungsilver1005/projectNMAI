@@ -33,3 +33,16 @@ test('should handle null transaction', () => {
     '1. -- | 0 VND | --'
   );
 });
+
+test('should reject whitespace-only transaction amount', () => {
+  const result = formatTransactionSummary([
+    {
+      account_id: 'ACC-01',
+      amount: '   ',
+      final_result: 'approved'
+    }
+  ]);
+
+  assert.equal(result, '1. ACC-01 | -- VND | approved');
+});
+
